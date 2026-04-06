@@ -1,110 +1,110 @@
 # quant-trading-system
-美股期权及黄金白银期货量化交易系统 - 回测+实盘
+Quantitative Trading System for US Stock Options, Gold & Silver Futures
 
-## 功能特性
+## Features
 
-### 📊 数据源
-- **Webull API** - 美股期权数据获取与交易
-- **Coinbase Advanced Trade API** - 黄金/白银期货交易
+### 📊 Data Sources
+- **Webull API** - US stock options data and trading
+- **Coinbase Advanced Trade API** - Gold/Silver futures trading
 
-### 🔧 核心模块
+### 🔧 Core Modules
 
 ```
 quant-trading-system/
-├── backtest/                 # 回测引擎
+├── backtest/                 # Backtest engine
 │   ├── __init__.py
-│   ├── engine.py            # 回测核心引擎
-│   ├── data_loader.py      # 历史数据加载
-│   └── analyzer.py         # 策略分析工具
-├── data/                    # 数据获取
+│   ├── engine.py            # Core backtest engine
+│   ├── data_loader.py      # Historical data loader
+│   └── analyzer.py         # Strategy analysis tools
+├── data/                    # Data fetching
 │   ├── __init__.py
-│   ├── webull_client.py    # Webull API 封装
-│   └── coinbase_client.py  # Coinbase API 封装
-├── strategies/              # 策略模板
+│   ├── webull_client.py    # Webull API wrapper
+│   └── coinbase_client.py  # Coinbase API wrapper
+├── strategies/              # Strategy templates
 │   ├── __init__.py
-│   ├── base_strategy.py    # 基础策略类
-│   ├── options_strategies.py   # 期权策略
-│   └── futures_strategies.py   # 期货策略
-├── trading/                # 实盘交易
+│   ├── base_strategy.py    # Base strategy class
+│   ├── options_strategies.py   # Options strategies
+│   └── futures_strategies.py   # Futures strategies
+├── trading/                # Live trading
 │   ├── __init__.py
-│   ├── webull_trader.py   # Webull 实盘
-│   └── coinbase_trader.py # Coinbase 实盘
-├── indicators/             # 技术指标
+│   ├── webull_trader.py   # Webull trader
+│   └── coinbase_trader.py # Coinbase trader
+├── indicators/             # Technical indicators
 │   ├── __init__.py
-│   └── technical.py        # 常用技术指标
-├── config.py               # 配置文件
-├── requirements.txt        # Python 依赖
+│   └── technical.py        # Common technical indicators
+├── config.py               # Configuration
+├── requirements.txt        # Python dependencies
 └── README.md
 ```
 
-## 快速开始
+## Quick Start
 
-### 安装依赖
+### Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 配置 API
+### Configure API
 
-编辑 `config.py` 填入你的 API 凭证：
+Edit `config.py` with your API credentials:
 
 ```python
-# Webull 配置
+# Webull Configuration
 WEBULL_EMAIL = "your_email"
 WEBULL_PASSWORD = "your_password"
 
-# Coinbase 配置
+# Coinbase Configuration
 COINBASE_API_KEY = "your_api_key"
 COINBASE_API_SECRET = "your_api_secret"
 ```
 
-### 运行回测
+### Run Backtest
 
 ```python
 from backtest.engine import BacktestEngine
 from strategies.options_strategies import IronCondorStrategy
 
-# 初始化回测引擎
+# Initialize backtest engine
 engine = BacktestEngine(
     initial_capital=100000,
-    commission=0.65  # 每手期权佣金
+    commission=0.65  # Per contract commission
 )
 
-# 加载数据并回测
+# Load data and run backtest
 engine.load_data("AAPL", "2024-01-01", "2024-12-31")
 engine.run_strategy(IronCondorStrategy())
 engine.print_results()
 ```
 
-## 策略列表
+## Strategy List
 
-### 期权策略
-- **Covered Call** - 备兑看涨期权
-- **Protective Put** - 保护性看跌期权
-- **Iron Condor** - 铁鹰策略
-- **Iron Butterfly** - 铁蝶策略
-- **Straddle/Strangle** - 跨式/宽跨式策略
+### Options Strategies
+- **Covered Call** - Buy stock, sell call options
+- **Protective Put** - Buy stock, buy put options
+- **Iron Condor** - Sell call spread + put spread
+- **Iron Butterfly** - Buy call spread + put spread
+- **Straddle/Strangle** - Long/Short volatility strategies
 
-### 期货策略
-- **趋势跟踪** - 均线交叉策略
-- **均值回归** - 布林带策略
-- **套利** - 跨交易所价差策略
+### Futures Strategies
+- **Trend Following** - Moving average crossover
+- **Mean Reversion** - Bollinger Bands strategy
+- **Arbitrage** - Cross-exchange spread trading
 
-## 技术栈
+## Tech Stack
 
 - **Python 3.10+**
-- **pandas** - 数据处理
-- **numpy** - 数值计算
-- **requests** - HTTP 请求
-- **ccxt** - 统一交易所接口
+- **pandas** - Data processing
+- **numpy** - Numerical computation
+- **requests** - HTTP requests
+- **ccxt** - Unified exchange interface
 
-## 注意事项
+## Disclaimer
 
-⚠️ 本项目仅供学习研究，使用前请务必：
-1. 充分理解策略风险
-2. 先用模拟盘/回测验证
-3. 小资金实盘测试
+⚠️ This project is for educational and research purposes only. Before using:
+1. Fully understand strategy risks
+2. Test with paper trading/first
+3. Start with small capital
 
 ## License
 
