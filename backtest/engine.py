@@ -164,7 +164,7 @@ class BacktestEngine:
             self.equity_curve.append(self._get_total_value(current_data))
         
         # 结束
-        self.strategy.onfinish()
+        self.strategy.on_finish()
     
     def _update_positions(self, current_data: pd.Series):
         """更新持仓估值"""
