@@ -2,32 +2,19 @@
 
 A comprehensive quantitative trading robot based on Webull OpenAPI, supporting both paper trading (simulation) and live trading.
 
-## Features
+## ⚡ Quick Start
 
-- **Trading API**: Account balance, positions, order management
-- **Market Data**: Historical K-line, real-time quotes, batch queries
-- **Order Management**: Place/modify/cancel orders (limit/market)
-- **Multiple Strategies**: MA, RSI, MACD, Breakout, Grid trading
-- **Paper Trading**: Test strategies without real money
+### Paper Trading (Test Environment - Recommended!)
 
-## Installation
-
-```bash
-pip install webull
-```
-
-## Quick Start
-
-### Paper Trading (No API Key Required)
+The easiest way to start - **no application required**:
 
 ```python
 from main import QuantBot
 
-# Create paper trading bot (simulation)
+# Paper trading mode (uses Webull's test environment)
 bot = QuantBot(
     symbols=["AAPL", "TSLA", "NVDA"],
-    paper_trading=True,
-    initial_cash=100000.0
+    paper_trading=True  # This uses Webull's test environment
 )
 
 # Check account
@@ -35,28 +22,25 @@ print(bot.get_account_status())
 
 # Run strategy
 signal = bot.run_strategy('MA', 'AAPL', short_ma=5, long_ma=20)
-print(f"Signal: {signal}")
 
 # Execute trade
 result = bot.buy('AAPL', 10)
 print(result)
-
-# Simulate days passing
-for i in range(30):
-    bot.next_day()
-
-# Check portfolio
-print(bot.get_balance())
-print(bot.get_positions_summary())
 ```
 
-### Live Trading (Requires API Key)
+### Live Trading (Production)
+
+Requires API approval from Webull:
 
 ```python
 from config import APP_KEY, APP_SECRET
 from main import QuantBot
 
-# Create live trading bot
+# Edit config.py to set:
+# USE_PAPER_TRADING = False
+# APP_KEY = "your_app_key"
+# APP_SECRET = "your_app_secret"
+
 bot = QuantBot(
     app_key=APP_KEY,
     app_secret=APP_SECRET,
@@ -64,37 +48,47 @@ bot = QuantBot(
     paper_trading=False
 )
 
-# Check account
 print(bot.get_account_status())
-
-# Execute trade
-result = bot.buy("AAPL", 10, limit_price=150.0)
 ```
 
-## Configuration
+## 📋 Configuration
 
-Edit `config.py` with your Webull API credentials:
+Edit `config.py`:
 
 ```python
+# Environment selection
+USE_PAPER_TRADING = True  # True = Test, False = Production
+
+# Test accounts (public, no application needed)
+# Source: https://developer.webull.com/apis/docs/sdk
+TEST_ACCOUNTS = [
+    {
+        "account_id": "J6HA4EBQRQFJD2J6NQH0F7M6",
+        "app_key": "49a88f2efed4dca02b9bc1a3cecbc35dbac2895b3526cc7c7588758351ddf425d6",
+        "app_secret": "..."
+    },
+    # ... more test accounts
+]
+
+# Production credentials (apply at https://developer.webull.com/)
 APP_KEY = "your_app_key"
 APP_SECRET = "your_app_secret"
-
-# Test environment
-API_ENDPOINT = "us-openapi.uat.webullbroker.com"
-
-# Production environment
-# API_ENDPOINT = "us-openapi.webullbroker.com"
 ```
 
-Get your API key from [Webull Developer Portal](https://developer.webull.com/)
+## 🌐 Environments
+
+| Environment | Endpoint | Account | Risk |
+|-------------|----------|---------|------|
+| **Test** | `us-openapi-alb.uat.webullbroker.com` | Shared test accounts | ✅ Safe |
+| **Production** | `api.webull.com` | Your own account | ⚠️ Real money |
 
 ## Running the Bot
 
 ```bash
-# Paper trading demo (default)
+# Paper trading demo
 python main.py
 
-# Live trading (requires API key)
+# Live trading (requires API approval)
 python main.py --live
 ```
 
@@ -102,15 +96,27 @@ python main.py --live
 
 ```
 webull/
-├── config.py           # API configuration
-├── trading_client.py   # Trading client (live)
+├── config.py           # API configuration (env, credentials)
+├── trading_client.py   # Trading client (live trading)
 ├── market_data.py      # Market data (live)
 ├── order_manager.py    # Order management
 ├── strategy.py         # Trading strategies
-├── paper_trading.py   # Paper trading simulator
+├── paper_trading.py   # Local paper trading simulator
 ├── main.py            # Main entry point
 └── requirements.txt   # Dependencies
 ```
+
+## 📊 Test Accounts (Shared)
+
+Webull provides public test accounts for development:
+
+| No. | Account ID | App Key |
+|-----|------------|---------|
+| 1 | J6HA4EBQRQFJD2J6NQH0F7M6 | 49a88f2efed4... |
+| 2 | HBGQE8NM0CQG4Q34ABOM83HD0 | 96d9f1a0aa91... |
+| 3 | BJITU00JUIVEDO5V3PRA5C5G | 8eecbf4489f4... |
+
+Source: [Webull Developer Docs](https://developer.webull.com/apis/docs/sdk)
 
 ## Strategies
 
@@ -122,14 +128,8 @@ webull/
 | MACD | Moving Average Convergence Divergence |
 | Grid | Grid trading strategy |
 
-## Paper Trading Features
+## ⚠️ Disclaimer
 
-- ✅ No API key required
-- ✅ Simulated market prices with realistic volatility
-- ✅ Track portfolio value over time
-- ✅ Test strategies without risk
-- ✅ Full order history and P&L tracking
-
-## Disclaimer
-
-⚠️ Quantitative trading involves risks. Use paper trading for testing before going live.
+- Paper trading is for testing only
+- Quantitative trading involves risks
+- Always test thoroughly before live trading
