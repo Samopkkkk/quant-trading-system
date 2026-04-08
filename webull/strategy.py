@@ -3,7 +3,17 @@
 """
 import time
 from datetime import datetime
-from market_data import WebullMarketData
+
+# 延迟导入，模拟盘模式下由外部注入
+WebullMarketData = None
+
+
+def _get_market_data():
+    """获取市场数据客户端"""
+    global WebullMarketData
+    if WebullMarketData is None:
+        from market_data import WebullMarketData
+    return WebullMarketData()
 
 
 class MovingAverageStrategy:
@@ -18,7 +28,8 @@ class MovingAverageStrategy:
         self.symbol = symbol
         self.short_ma = short_ma  # 短期均线
         self.long_ma = long_ma   # 长期均线
-        self.market_data = WebullMarketData()
+        # 延迟初始化，允许外部注入
+        self.market_data = None
     
     def calculate_ma(self, prices: list, period: int) -> float:
         """计算移动平均"""
@@ -26,19 +37,31 @@ class MovingAverageStrategy:
             return None
         return sum(prices[-period:]) / period
     
-    def generate_signal(self) -> str:
+    def generate_signal(self, data_client=None) -> str:
         """
         生成交易信号
+        
+        Args:
+            data_client: 可选的数据客户端（模拟盘/实盘）
         
         Returns:
             'BUY' - 买入信号
             'SELL' - 卖出信号
             'HOLD' - 持有
         """
+        # 使用传入的数据客户端或延迟获取
+        market = data_client or self.market_data
+        if market is None:
+            try:
+                from market_data import WebullMarketData
+                market = WebullMarketData()
+            except ImportError:
+                return 'HOLD'
+        
         # 获取历史数据
-        bars = self.market_data.get_history_bars(
+        bars = market.get_history_bars(
             self.symbol, 
-            timespan="D1",  # 日线
+            period="D1",  # 日线
             count=max(self.short_ma, self.long_ma) + 5
         )
         
@@ -83,7 +106,7 @@ class BreakoutStrategy:
     def __init__(self, symbol: str, period: int = 20):
         self.symbol = symbol
         self.period = period  # 观察周期
-        self.market_data = WebullMarketData()
+        self.market_data = None
     
     def generate_signal(self) -> str:
         """突破策略信号"""
@@ -127,7 +150,7 @@ class RSIStrategy:
         self.period = period
         self.oversold = oversold    # 超卖阈值
         self.overbought = overbought  # 超买阈值
-        self.market_data = WebullMarketData()
+        self.market_data = None
     
     def calculate_rsi(self, prices: list) -> float:
         """计算RSI"""
@@ -200,7 +223,7 @@ class MACDStrategy:
         self.fast = fast    # 快线周期
         self.slow = slow    # 慢线周期
         self.signal = signal  # 信号线周期
-        self.market_data = WebullMarketData()
+        self.market_data = None
     
     def calculate_ema(self, prices: list, period: int) -> float:
         """计算指数移动平均"""

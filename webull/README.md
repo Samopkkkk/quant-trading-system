@@ -1,77 +1,135 @@
-# Webull 量化交易机器人
+# Webull Quantitative Trading Bot
 
-基于 Webull OpenAPI 开发的量化交易机器人示例。
+A comprehensive quantitative trading robot based on Webull OpenAPI, supporting both paper trading (simulation) and live trading.
 
-## 功能特性
+## Features
 
-- 账户余额和持仓查询
-- 历史K线数据获取
-- 实时行情订阅
-- 订单下单/改单/撤单
-- 持仓管理
-- 多种量化策略示例
+- **Trading API**: Account balance, positions, order management
+- **Market Data**: Historical K-line, real-time quotes, batch queries
+- **Order Management**: Place/modify/cancel orders (limit/market)
+- **Multiple Strategies**: MA, RSI, MACD, Breakout, Grid trading
+- **Paper Trading**: Test strategies without real money
 
-## 安装依赖
+## Installation
 
 ```bash
 pip install webull
 ```
 
-## 配置说明
+## Quick Start
 
-在 `config.py` 中配置你的 API 凭证：
-- 需要先在 Webull Developer 平台注册应用获取 App Key 和 App Secret
-- 测试环境使用 `us-openapi.uat.webullbroker.com`
-- 生产环境使用 `us-openapi.webullbroker.com`
-
-## 快速开始
+### Paper Trading (No API Key Required)
 
 ```python
-from config import *
-from trading_client import WebullTrader
-from order_manager import OrderManager
-from market_data import WebullMarketData
+from main import QuantBot
 
-# 初始化
-trader = WebullTrader(APP_KEY, APP_SECRET)
-trader.set_account()
+# Create paper trading bot (simulation)
+bot = QuantBot(
+    symbols=["AAPL", "TSLA", "NVDA"],
+    paper_trading=True,
+    initial_cash=100000.0
+)
 
-# 获取余额
-balance = trader.get_account_balance()
-print(f"账户余额: {balance}")
+# Check account
+print(bot.get_account_status())
 
-# 获取持仓
-positions = trader.get_positions()
-print(f"持仓: {positions}")
+# Run strategy
+signal = bot.run_strategy('MA', 'AAPL', short_ma=5, long_ma=20)
+print(f"Signal: {signal}")
 
-# 获取行情
-market_data = WebullMarketData()
-bars = market_data.get_history_bars("AAPL")
-print(f"K线数据: {bars}")
+# Execute trade
+result = bot.buy('AAPL', 10)
+print(result)
 
-# 下单
-order_mgr = OrderManager(trader)
-order_id = order_mgr.buy_limit("AAPL", 10, 150.0)
-print(f"订单ID: {order_id}")
+# Simulate days passing
+for i in range(30):
+    bot.next_day()
+
+# Check portfolio
+print(bot.get_balance())
+print(bot.get_positions_summary())
 ```
 
-## 策略使用示例
+### Live Trading (Requires API Key)
 
 ```python
-from strategy import MovingAverageStrategy, BreakoutStrategy, RSIStrategy
+from config import APP_KEY, APP_SECRET
+from main import QuantBot
 
-# 移动平均策略
-ma_strategy = MovingAverageStrategy("AAPL", short_ma=5, long_ma=20)
-signal = ma_strategy.generate_signal()
-print(f"MA策略信号: {signal}")
+# Create live trading bot
+bot = QuantBot(
+    app_key=APP_KEY,
+    app_secret=APP_SECRET,
+    symbols=["AAPL", "TSLA"],
+    paper_trading=False
+)
 
-# 突破策略
-breakout = BreakoutStrategy("AAPL", period=20)
-signal = breakout.generate_signal()
-print(f"突破策略信号: {signal}")
+# Check account
+print(bot.get_account_status())
 
-# RSI策略
-rsi = RSIStrategy("AAPL", period=14)
-signal = rsi.generate_signal()
-print(f"RSI策略信号: {signal}")
+# Execute trade
+result = bot.buy("AAPL", 10, limit_price=150.0)
 ```
+
+## Configuration
+
+Edit `config.py` with your Webull API credentials:
+
+```python
+APP_KEY = "your_app_key"
+APP_SECRET = "your_app_secret"
+
+# Test environment
+API_ENDPOINT = "us-openapi.uat.webullbroker.com"
+
+# Production environment
+# API_ENDPOINT = "us-openapi.webullbroker.com"
+```
+
+Get your API key from [Webull Developer Portal](https://developer.webull.com/)
+
+## Running the Bot
+
+```bash
+# Paper trading demo (default)
+python main.py
+
+# Live trading (requires API key)
+python main.py --live
+```
+
+## Project Structure
+
+```
+webull/
+├── config.py           # API configuration
+├── trading_client.py   # Trading client (live)
+├── market_data.py      # Market data (live)
+├── order_manager.py    # Order management
+├── strategy.py         # Trading strategies
+├── paper_trading.py   # Paper trading simulator
+├── main.py            # Main entry point
+└── requirements.txt   # Dependencies
+```
+
+## Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| MA | Moving Average (Golden Cross/Death Cross) |
+| RSI | Relative Strength Index |
+| Breakout | Price breakout (N-day high/low) |
+| MACD | Moving Average Convergence Divergence |
+| Grid | Grid trading strategy |
+
+## Paper Trading Features
+
+- ✅ No API key required
+- ✅ Simulated market prices with realistic volatility
+- ✅ Track portfolio value over time
+- ✅ Test strategies without risk
+- ✅ Full order history and P&L tracking
+
+## Disclaimer
+
+⚠️ Quantitative trading involves risks. Use paper trading for testing before going live.
