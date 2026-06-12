@@ -1,5 +1,86 @@
 # quant-trading-system
-Quantitative Trading System for US Stock Options, Gold & Silver Futures
+
+A quantitative auto-trading agent for US equities on **Webull**, with honest
+backtesting and real risk management.
+
+> ⚠️ **On returns:** there is no setting of this system — or any system — that
+> *guarantees* a profit, let alone "100% in a month." That target decomposes
+> into a *minimum* (a floor, which markets don't provide above the risk-free
+> rate) and *+100%* (reachable only as a low-probability tail while accepting a
+> high probability of ruin). Read **[docs/RETURNS_AND_RISK.md](docs/RETURNS_AND_RISK.md)**
+> and run `python -m agent.montecarlo` before risking real money.
+
+## Rebuilt agent (`agent/`)
+
+The `agent/` package is the current, clean implementation. It separates concerns
+so each layer is testable and auditable:
+
+```
+agent/
+├── config.py      # config + risk limits (secrets from env only; paper by default)
+├── types.py       # Order, Fill, Position, Signal, ...
+├── data.py        # market data: Yahoo / CSV / synthetic (for tests)
+├── strategies.py  # alpha: price history -> exposure (NO look-ahead)
+├── risk.py        # sizing + daily-loss halt + max-drawdown kill switch
+├── broker.py      # PaperBroker (offline) + WebullBroker (real OpenAPI SDK)
+├── backtest.py    # event-driven backtest, honest metrics
+├── engine.py      # the live/paper TradingAgent loop
+├── montecarlo.py  # quantifies the return/ruin tradeoff
+└── cli.py         # python -m agent.cli {backtest,paper,live}
+```
+
+### Quick start
+
+```bash
+pip install -r requirements.txt
+
+# Offline backtest (synthetic data — no network needed)
+python -m agent.cli backtest --synthetic --strategy momentum
+
+# Real-data backtest (needs network egress to Yahoo Finance)
+python -m agent.cli backtest --symbol AAPL --strategy ma_cross --range 2y
+
+# Paper trading loop
+python -m agent.cli paper --symbols AAPL,MSFT --strategy ma_cross --cycles 5 --no-sleep
+
+# See the real cost of chasing big monthly returns
+python -m agent.montecarlo
+
+# Run the tests
+python -m pytest -q
+```
+
+### Live trading on Webull
+
+Live trading is deliberately gated. It requires:
+
+1. `pip install webull-python-sdk-core webull-python-sdk-trade`
+2. Env vars `WEBULL_APP_KEY`, `WEBULL_APP_SECRET`, `WEBULL_ACCOUNT_ID`
+   (apply at https://developer.webull.com/).
+3. The explicit flag `--i-understand-the-risk` *and* typing `TRADE` to confirm.
+
+```bash
+python -m agent.cli live --symbols AAPL --strategy ma_cross --i-understand-the-risk
+# add --production to hit api.webull.com (REAL MONEY) instead of the UAT sandbox
+```
+
+### Environment / network note
+
+This repo was developed in a sandbox whose egress allowlist permits **only
+PyPI**. Yahoo and all Webull hosts return `403 Host not in allowlist` there, so
+real-data backtests and live trading must run locally or in an environment where
+those hosts are allowlisted. Details in
+[docs/RETURNS_AND_RISK.md](docs/RETURNS_AND_RISK.md).
+
+---
+
+## Legacy modules
+
+The directories below (`backtest/`, `strategies/`, `trading/`, `data/`, `mvp/`,
+`webull/`) are the **previous** implementation, kept for reference. Note the old
+live path imported `webull.core.client`, which is neither the official SDK nor
+installable; the rebuilt `agent/` package supersedes it. The sections below
+document that legacy system.
 
 ## Features
 
