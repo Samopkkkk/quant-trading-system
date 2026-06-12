@@ -51,6 +51,30 @@ class RiskConfig:
         if not 0 < self.max_drawdown_limit_fraction <= 1.0:
             raise ValueError("max_drawdown_limit_fraction must be in (0, 1]")
 
+    # ---- Named presets (the aggressiveness dial, made explicit) ----
+    @classmethod
+    def conservative(cls) -> "RiskConfig":
+        """Survival-first: small positions, no leverage, tight kill switch."""
+        return cls(max_position_fraction=0.10, risk_per_trade_fraction=0.005,
+                   target_annual_vol=0.12, max_gross_leverage=1.0,
+                   daily_loss_limit_fraction=0.02, max_drawdown_limit_fraction=0.10)
+
+    @classmethod
+    def balanced(cls) -> "RiskConfig":
+        """The default. Reasonable risk for a single retail account."""
+        return cls()
+
+    @classmethod
+    def aggressive(cls) -> "RiskConfig":
+        """High target, HIGH probability of large drawdown or ruin.
+
+        Use only with money you can lose entirely. Run `python -m agent.montecarlo`
+        to see the ruin probability this implies before enabling it.
+        """
+        return cls(max_position_fraction=0.50, risk_per_trade_fraction=0.02,
+                   target_annual_vol=0.40, max_gross_leverage=3.0,
+                   daily_loss_limit_fraction=0.08, max_drawdown_limit_fraction=0.35)
+
 
 @dataclass
 class AgentConfig:

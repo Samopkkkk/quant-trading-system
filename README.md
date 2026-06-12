@@ -40,6 +40,12 @@ python -m agent.cli backtest --synthetic --strategy momentum
 # Real-data backtest (needs network egress to Yahoo Finance)
 python -m agent.cli backtest --symbol AAPL --strategy ma_cross --range 2y
 
+# ...or validate on your OWN data file (works offline)
+python -m agent.cli backtest --symbol AAPL --csv mydata.csv --strategy ma_cross
+
+# Walk-forward (out-of-sample) validation — the honest test for overfitting
+python -m agent.cli walkforward --symbol AAPL --range 5y --strategy ma_cross
+
 # Paper trading loop
 python -m agent.cli paper --symbols AAPL,MSFT --strategy ma_cross --cycles 5 --no-sleep
 

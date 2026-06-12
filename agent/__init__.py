@@ -23,6 +23,7 @@ from .risk import RiskManager, kelly_fraction
 from .strategies import (
     STRATEGIES, Strategy, MovingAverageCross, Momentum, RsiMeanReversion,
 )
+from .validation import walk_forward, param_grid, WalkForwardResult
 from .types import Order, Fill, Position, Signal, Side, OrderType
 
 __version__ = "1.0.0"
@@ -33,5 +34,6 @@ __all__ = [
     "Broker", "PaperBroker", "WebullBroker", "make_broker",
     "RiskManager", "kelly_fraction",
     "STRATEGIES", "Strategy", "MovingAverageCross", "Momentum", "RsiMeanReversion",
+    "walk_forward", "param_grid", "WalkForwardResult",
     "Order", "Fill", "Position", "Signal", "Side", "OrderType",
 ]
