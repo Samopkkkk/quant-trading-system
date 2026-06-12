@@ -12,6 +12,7 @@ errors rather than silently pretending an order succeeded.
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -22,6 +23,18 @@ from .types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def parse_instrument_ids(value: str | None) -> dict[str, str]:
+    """Parse WEBULL_INSTRUMENT_IDS='AAPL:913256135,MSFT:913354090' into a dict."""
+    result: dict[str, str] = {}
+    for pair in (value or "").split(","):
+        pair = pair.strip()
+        if ":" in pair:
+            sym, iid = pair.split(":", 1)
+            if sym.strip() and iid.strip():
+                result[sym.strip().upper()] = iid.strip()
+    return result
 
 
 class Broker(ABC):
@@ -248,10 +261,91 @@ class WebullBroker(Broker):
         self._json(resp)
         return True
 
+    def list_open_orders(self) -> list[dict]:
+        data = self._json(self.orders.list_open_orders(self.account_id))
+        return data.get("data", data) if isinstance(data, dict) else (data or [])
+
+    def get_order_status(self, client_order_id: str) -> dict:
+        return self._json(self.orders.query_order_detail(self.account_id, client_order_id))
+
+
+# --------------------------------------------------------------------------- #
+#  Dry-run wrapper (sandbox-first safety)
+# --------------------------------------------------------------------------- #
+class DryRunBroker(Broker):
+    """Wrap any broker: read real account/positions, but LOG orders instead of
+    sending them. The safe first step before letting an agent place real orders."""
+
+    def __init__(self, inner: Broker):
+        self.inner = inner
+        self.intended: list[Order] = []
+
+    def get_account(self) -> AccountSnapshot:
+        return self.inner.get_account()
+
+    def get_positions(self) -> dict[str, Position]:
+        return self.inner.get_positions()
+
+    def submit_order(self, order: Order) -> Fill:
+        self.intended.append(order)
+        logger.warning("[DRY RUN] would %s %.0f %s (%s)",
+                       order.side.value, order.quantity, order.symbol,
+                       order.order_type.value)
+        return Fill(order, order.limit_price or 0.0, 0.0, 0.0, datetime.utcnow(),
+                    status=OrderStatus.PENDING)
+
+    def cancel_order(self, broker_order_id: str) -> bool:
+        return True
+
+    def update_price(self, symbol: str, price: float) -> None:
+        if hasattr(self.inner, "update_price"):
+            self.inner.update_price(symbol, price)
+
+
+def preflight(config: AgentConfig) -> list[tuple[str, bool, str]]:
+    """Validate the live-trading prerequisites. Returns (name, ok, detail) rows."""
+    checks: list[tuple[str, bool, str]] = []
+
+    try:
+        import webullsdkcore  # noqa: F401
+        import webullsdktrade  # noqa: F401
+        checks.append(("Webull SDK installed", True, "webullsdkcore + webullsdktrade"))
+    except ImportError:
+        checks.append(("Webull SDK installed", False,
+                       "pip install webull-python-sdk-core webull-python-sdk-trade"))
+
+    creds_ok = all([config.webull_app_key, config.webull_app_secret, config.webull_account_id])
+    checks.append(("Credentials present", creds_ok,
+                   "WEBULL_APP_KEY / WEBULL_APP_SECRET / WEBULL_ACCOUNT_ID"
+                   if not creds_ok else "all set"))
+
+    iid = parse_instrument_ids(os.getenv("WEBULL_INSTRUMENT_IDS"))
+    checks.append(("Instrument IDs mapped", bool(iid),
+                   f"{len(iid)} mapped" if iid else
+                   "optional: set WEBULL_INSTRUMENT_IDS='AAPL:<id>,...'"))
+
+    try:
+        import requests
+        r = requests.get(f"https://{config.webull_endpoint}/", timeout=8)
+        reachable = "Host not in allowlist" not in r.text
+        checks.append(("Webull endpoint reachable", reachable,
+                       config.webull_endpoint if reachable
+                       else f"egress blocked to {config.webull_endpoint}"))
+    except Exception as exc:
+        checks.append(("Webull endpoint reachable", False, str(exc)[:80]))
+
+    return checks
+
 
 def make_broker(config: AgentConfig) -> Broker:
-    """Factory: PaperBroker unless config.live is explicitly True."""
+    """Factory: PaperBroker unless config.live; DryRunBroker wraps when dry_run."""
     if config.live:
+        instrument_ids = parse_instrument_ids(os.getenv("WEBULL_INSTRUMENT_IDS"))
+        broker: Broker = WebullBroker(config, instrument_id_map=instrument_ids)
+        if config.dry_run:
+            logger.warning("DRY RUN: connected to Webull but no orders will be sent.")
+            return DryRunBroker(broker)
         logger.warning("LIVE trading enabled — real orders will be sent to Webull.")
-        return WebullBroker(config)
-    return PaperBroker(config)
+        return broker
+    inner = PaperBroker(config)
+    return DryRunBroker(inner) if config.dry_run else inner

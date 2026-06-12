@@ -84,6 +84,7 @@ class AgentConfig:
     # Broker selection.
     live: bool = False                 # False => paper broker. True => Webull.
     paper_trading_endpoint: bool = True  # If live, use Webull UAT unless False.
+    dry_run: bool = False              # If True, log intended orders, send none.
 
     # Execution model (also used by the paper broker / backtest).
     commission_per_share: float = 0.0   # Webull US stock commission is $0.

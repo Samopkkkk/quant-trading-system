@@ -99,23 +99,48 @@ def cmd_paper(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_preflight(args: argparse.Namespace) -> int:
+    from .broker import preflight
+    cfg = AgentConfig(symbols=args.symbols.split(","), live=False,
+                      paper_trading_endpoint=not args.production)
+    print(f"Webull preflight ({cfg.webull_endpoint}):")
+    all_ok = True
+    for name, ok, detail in preflight(cfg):
+        print(f"  [{'OK' if ok else '!!'}] {name}: {detail}")
+        all_ok = all_ok and ok
+    print("\nReady to connect." if all_ok else
+          "\nResolve the !! items before going live (see docs/WEBULL_SETUP.md).")
+    return 0 if all_ok else 1
+
+
 def cmd_live(args: argparse.Namespace) -> int:
-    if not args.i_understand_the_risk:
+    dry = args.dry_run
+    if not dry and not args.i_understand_the_risk:
         print("Refusing to trade live without --i-understand-the-risk.\n"
               "Live trading can lose money rapidly, including more than you "
-              "deposit if margin/leverage is used. Read docs/RETURNS_AND_RISK.md.")
+              "deposit if margin/leverage is used. Read docs/RETURNS_AND_RISK.md.\n"
+              "Tip: start with --dry-run (connects, sends no orders).")
         return 2
     cfg = AgentConfig(symbols=args.symbols.split(","), initial_capital=args.capital,
-                      live=True, paper_trading_endpoint=not args.production,
+                      live=True, dry_run=dry, paper_trading_endpoint=not args.production,
                       poll_interval_seconds=args.interval, risk=_risk_from_args(args))
-    cfg.validate()  # raises if credentials are missing
+    try:
+        cfg.validate()  # raises if credentials are missing
+    except RuntimeError as exc:
+        print(f"{exc}\nSee docs/WEBULL_SETUP.md, then run `python -m agent.cli preflight`.")
+        return 2
     endpoint = "PRODUCTION (real money)" if args.production else "UAT sandbox"
-    confirm = input(f"About to trade {cfg.symbols} on Webull {endpoint}. Type 'TRADE' to proceed: ")
-    if confirm.strip() != "TRADE":
-        print("Aborted.")
-        return 1
+    if dry:
+        print(f"DRY RUN against Webull {endpoint}: connect and log intended orders, send none.")
+    else:
+        confirm = input(f"About to trade {cfg.symbols} on Webull {endpoint}. Type 'TRADE' to proceed: ")
+        if confirm.strip() != "TRADE":
+            print("Aborted.")
+            return 1
     agent = TradingAgent(cfg, _build_strategy(args.strategy, args), make_broker(cfg))
     agent.run(max_cycles=args.cycles)
+    if dry and hasattr(agent.broker, "intended"):
+        print(f"Dry run complete: {len(agent.broker.intended)} order(s) would have been sent.")
     return 0
 
 
@@ -172,6 +197,12 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--no-sleep", action="store_true")
     pa.set_defaults(func=cmd_paper)
 
+    pf = sub.add_parser("preflight", help="check live-trading prerequisites")
+    pf.add_argument("--symbols", default="AAPL")
+    pf.add_argument("--production", action="store_true",
+                    help="check api.webull.com instead of the UAT sandbox")
+    pf.set_defaults(func=cmd_preflight)
+
     lv = sub.add_parser("live", help="trade live on Webull (requires credentials)")
     _add_common(lv)
     lv.add_argument("--symbols", default="AAPL")
@@ -179,6 +210,8 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("--interval", type=int, default=60)
     lv.add_argument("--production", action="store_true",
                     help="use api.webull.com (REAL MONEY) instead of UAT sandbox")
+    lv.add_argument("--dry-run", action="store_true",
+                    help="connect to Webull but log intended orders without sending")
     lv.add_argument("--i-understand-the-risk", action="store_true")
     lv.set_defaults(func=cmd_live)
     return parser
