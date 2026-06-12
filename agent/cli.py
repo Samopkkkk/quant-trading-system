@@ -13,7 +13,7 @@ import logging
 import sys
 
 from . import data as market_data
-from .backtest import Backtester
+from .backtest import Backtester, PortfolioBacktester
 from .broker import PaperBroker, make_broker
 from .config import AgentConfig, RiskConfig
 from .engine import TradingAgent
@@ -56,6 +56,24 @@ def cmd_backtest(args: argparse.Namespace) -> int:
                       risk=_risk_from_args(args))
     bt = Backtester(cfg, _build_strategy(args.strategy, args))
     report = bt.run(args.symbol, prices)
+    print(report.summary())
+    print("\nReminder: this is one historical path, not a prediction or guarantee.")
+    return 0
+
+
+def cmd_portfolio(args: argparse.Namespace) -> int:
+    symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    if args.synthetic:
+        prices = {s: market_data.synthetic_ohlcv(days=args.days, seed=args.seed + i,
+                                                 start_price=100.0 + 10 * i)
+                  for i, s in enumerate(symbols)}
+    else:
+        prices = {s: market_data.get_history(s, range_=args.range, interval="1d")
+                  for s in symbols}
+    cfg = AgentConfig(symbols=symbols, initial_capital=args.capital,
+                      risk=_risk_from_args(args))
+    report = PortfolioBacktester(cfg, _build_strategy(args.strategy, args)).run(prices)
+    print(f"Portfolio of {len(symbols)} symbols: {symbols}")
     print(report.summary())
     print("\nReminder: this is one historical path, not a prediction or guarantee.")
     return 0
@@ -196,6 +214,15 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--interval", type=int, default=60)
     pa.add_argument("--no-sleep", action="store_true")
     pa.set_defaults(func=cmd_paper)
+
+    po = sub.add_parser("portfolio", help="multi-symbol portfolio backtest")
+    _add_common(po)
+    po.add_argument("--symbols", default="AAPL,MSFT,SPY")
+    po.add_argument("--range", default="2y")
+    po.add_argument("--synthetic", action="store_true")
+    po.add_argument("--days", type=int, default=504)
+    po.add_argument("--seed", type=int, default=42)
+    po.set_defaults(func=cmd_portfolio)
 
     pf = sub.add_parser("preflight", help="check live-trading prerequisites")
     pf.add_argument("--symbols", default="AAPL")

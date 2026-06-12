@@ -17,7 +17,9 @@ docs/RETURNS_AND_RISK.md before risking real money.
 """
 from .config import AgentConfig, RiskConfig
 from .engine import TradingAgent
-from .backtest import Backtester, BacktestReport, Metrics
+from .backtest import (
+    Backtester, PortfolioBacktester, BacktestReport, Metrics, align_prices,
+)
 from .broker import (
     Broker, PaperBroker, WebullBroker, DryRunBroker, make_broker,
     parse_instrument_ids, preflight,
@@ -33,7 +35,7 @@ __version__ = "1.0.0"
 
 __all__ = [
     "AgentConfig", "RiskConfig", "TradingAgent",
-    "Backtester", "BacktestReport", "Metrics",
+    "Backtester", "PortfolioBacktester", "BacktestReport", "Metrics", "align_prices",
     "Broker", "PaperBroker", "WebullBroker", "DryRunBroker", "make_broker",
     "parse_instrument_ids", "preflight",
     "RiskManager", "kelly_fraction",

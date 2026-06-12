@@ -68,8 +68,18 @@ class BacktestReport:
         )
 
 
+def annualized_vol(close: pd.Series, window: int, periods_per_year: int = 252) -> float | None:
+    """Annualized stdev of the last `window` daily returns, or None if too short."""
+    if len(close) < window + 1:
+        return None
+    rets = close.pct_change().dropna().tail(window)
+    if len(rets) < 2 or rets.std() == 0:
+        return None
+    return float(rets.std() * np.sqrt(periods_per_year))
+
+
 def realized_pnls_from_fills(fills: list[Fill]) -> list[float]:
-    """Reconstruct round-trip P&L using average-cost accounting."""
+    """Reconstruct round-trip P&L using average-cost accounting (single symbol)."""
     pos_qty = 0.0
     avg = 0.0
     realized: list[float] = []
@@ -131,8 +141,19 @@ def compute_metrics(equity: pd.Series, realized: list[float],
     return m
 
 
+def realized_pnls_multi(fills: list[Fill]) -> list[float]:
+    """Round-trip P&L across many symbols: group by symbol, reconstruct each."""
+    by_symbol: dict[str, list[Fill]] = {}
+    for f in fills:
+        by_symbol.setdefault(f.order.symbol, []).append(f)
+    out: list[float] = []
+    for sym_fills in by_symbol.values():
+        out.extend(realized_pnls_from_fills(sym_fills))
+    return out
+
+
 class Backtester:
-    """Single-symbol event-driven backtest (multi-symbol portfolio is a TODO)."""
+    """Single-symbol event-driven backtest."""
 
     def __init__(self, config: AgentConfig, strategy: Strategy,
                  vol_window: int = 20, periods_per_year: int = 252):
@@ -208,3 +229,90 @@ class Backtester:
         side = Side.BUY if delta > 0 else Side.SELL
         broker.submit_order(Order(symbol=symbol, side=side, quantity=abs(delta),
                                   order_type=OrderType.MARKET))
+
+
+def align_prices(prices: dict[str, pd.DataFrame]) -> tuple[pd.DatetimeIndex, dict]:
+    """Restrict all symbols to their common trading days (intersection of dates)."""
+    common: pd.DatetimeIndex | None = None
+    for df in prices.values():
+        idx = df.sort_index().index
+        common = idx if common is None else common.intersection(idx)
+    if common is None or len(common) == 0:
+        raise ValueError("symbols share no common dates")
+    return common, {s: df.sort_index().loc[common] for s, df in prices.items()}
+
+
+class PortfolioBacktester:
+    """Multi-symbol event-driven backtest sharing one capital pool.
+
+    Same no-look-ahead convention as `Backtester` (decide on closed bars, fill at
+    next open, mark at close). Adds a portfolio-level constraint: after per-symbol
+    sizing, total gross exposure is scaled down to respect `max_gross_leverage`.
+    """
+
+    def __init__(self, config: AgentConfig, strategy, vol_window: int = 20,
+                 periods_per_year: int = 252):
+        self.cfg = config
+        self._strategy = strategy            # a Strategy (shared) or dict[sym->Strategy]
+        self.vol_window = vol_window
+        self.periods_per_year = periods_per_year
+
+    def _strategy_for(self, symbol: str):
+        if isinstance(self._strategy, dict):
+            return self._strategy[symbol]
+        return self._strategy
+
+    def run(self, prices: dict[str, pd.DataFrame]) -> BacktestReport:
+        index, aligned = align_prices(prices)
+        symbols = list(aligned)
+        broker = PaperBroker(self.cfg)
+        risk = RiskManager(self.cfg.risk)
+        risk.initialize(self.cfg.initial_capital, now=index[0].to_pydatetime())
+
+        equity_points, out_index = [], []
+        for t in range(len(index)):
+            ts = index[t].to_pydatetime()
+            opens = {s: float(aligned[s]["open"].iloc[t]) for s in symbols}
+            closes = {s: float(aligned[s]["close"].iloc[t]) for s in symbols}
+
+            if t >= 1:
+                for s in symbols:
+                    broker.update_price(s, opens[s])
+                equity = broker.get_account().equity
+
+                raw = {}
+                for s in symbols:
+                    history = aligned[s].iloc[:t]
+                    sig = self._strategy_for(s).evaluate(s, history)
+                    vol = annualized_vol(history["close"], self.vol_window,
+                                         self.periods_per_year)
+                    raw[s] = risk.target_shares(equity, opens[s], sig, vol)
+
+                # Portfolio leverage cap: scale the whole book down if needed.
+                gross = sum(abs(raw[s]) * opens[s] for s in symbols)
+                max_gross = self.cfg.risk.max_gross_leverage * equity
+                if gross > max_gross and gross > 0:
+                    scale = max_gross / gross
+                    raw = {s: float(int(raw[s] * scale)) for s in symbols}
+
+                positions = broker.get_positions()
+                for s in symbols:
+                    cur_qty = positions[s].quantity if s in positions else 0.0
+                    target = raw[s]
+                    if risk.state.kill_switch_active:
+                        target = 0.0
+                    elif not risk.can_open_new_risk() and abs(target) > abs(cur_qty):
+                        target = cur_qty
+                    Backtester._rebalance(broker, s, cur_qty, target, opens[s])
+
+            for s in symbols:
+                broker.update_price(s, closes[s])
+            equity = broker.get_account().equity
+            risk.update_equity(equity, ts)
+            equity_points.append(equity)
+            out_index.append(index[t])
+
+        curve = pd.Series(equity_points, index=pd.DatetimeIndex(out_index, name="date"))
+        realized = realized_pnls_multi(broker.fills)
+        metrics = compute_metrics(curve, realized, self.periods_per_year)
+        return BacktestReport(curve, broker.fills, realized, metrics)

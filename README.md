@@ -46,6 +46,12 @@ python -m agent.cli backtest --symbol AAPL --csv mydata.csv --strategy ma_cross
 # Walk-forward (out-of-sample) validation — the honest test for overfitting
 python -m agent.cli walkforward --symbol AAPL --range 5y --strategy ma_cross
 
+# Multi-symbol portfolio backtest (shared capital, book-level leverage cap)
+python -m agent.cli portfolio --symbols A,B,C --synthetic --strategy momentum
+
+# Check live prerequisites before connecting to Webull
+python -m agent.cli preflight
+
 # Paper trading loop
 python -m agent.cli paper --symbols AAPL,MSFT --strategy ma_cross --cycles 5 --no-sleep
 
