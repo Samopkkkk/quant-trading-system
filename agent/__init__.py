@@ -25,6 +25,7 @@ from .broker import (
     parse_instrument_ids, preflight,
 )
 from .risk import RiskManager, kelly_fraction
+from .state import StateStore
 from .strategies import (
     STRATEGIES, Strategy, MovingAverageCross, Momentum, RsiMeanReversion,
 )
@@ -38,7 +39,7 @@ __all__ = [
     "Backtester", "PortfolioBacktester", "BacktestReport", "Metrics", "align_prices",
     "Broker", "PaperBroker", "WebullBroker", "DryRunBroker", "make_broker",
     "parse_instrument_ids", "preflight",
-    "RiskManager", "kelly_fraction",
+    "RiskManager", "kelly_fraction", "StateStore",
     "STRATEGIES", "Strategy", "MovingAverageCross", "Momentum", "RsiMeanReversion",
     "walk_forward", "param_grid", "WalkForwardResult",
     "Order", "Fill", "Position", "Signal", "Side", "OrderType",

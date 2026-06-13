@@ -94,6 +94,10 @@ class AgentConfig:
     # Loop cadence for live/paper run, in seconds.
     poll_interval_seconds: int = 60
 
+    # Path to a JSON state file (persists kill switch / peak equity / trade log
+    # across restarts). None disables persistence (fine for backtests).
+    state_path: str | None = None
+
     risk: RiskConfig = field(default_factory=RiskConfig)
 
     # ---- Webull credentials (env only) ----

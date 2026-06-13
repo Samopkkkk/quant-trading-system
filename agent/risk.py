@@ -16,9 +16,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from .config import RiskConfig
 from .types import Signal
+
+if TYPE_CHECKING:
+    from .state import StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -46,25 +50,42 @@ def kelly_fraction(win_prob: float, win_loss_ratio: float) -> float:
 
 
 class RiskManager:
-    def __init__(self, config: RiskConfig):
+    def __init__(self, config: RiskConfig, store: "StateStore | None" = None):
         config.validate()
         self.cfg = config
+        self.store = store
         self._state: RiskState | None = None
 
     # ------------------------------------------------------------------ state
     def initialize(self, equity: float, now: datetime | None = None) -> None:
+        """Restore persisted state if available; otherwise start fresh.
+
+        Restoring (rather than resetting peak_equity to the current value) is what
+        keeps the max-drawdown kill switch honest across process restarts.
+        """
         now = now or datetime.utcnow()
-        self._state = RiskState(
-            peak_equity=equity,
-            day_start_equity=equity,
-            current_day=now.date(),
-        )
+        restored = self.store.load_risk_state() if self.store else None
+        if restored is not None:
+            self._state = restored
+            logger.info("Restored risk state: peak=$%.2f kill_switch=%s",
+                        restored.peak_equity, restored.kill_switch_active)
+        else:
+            self._state = RiskState(
+                peak_equity=equity,
+                day_start_equity=equity,
+                current_day=now.date(),
+            )
+        self._persist()
 
     @property
     def state(self) -> RiskState:
         if self._state is None:
             raise RuntimeError("RiskManager.initialize() must be called first")
         return self._state
+
+    def _persist(self) -> None:
+        if self.store is not None and self._state is not None:
+            self.store.save_risk_state(self._state)
 
     def update_equity(self, equity: float, now: datetime | None = None) -> RiskState:
         """Feed the latest equity; update peak/daily marks and circuit breakers."""
@@ -94,6 +115,7 @@ class RiskManager:
                 "DAILY LOSS HALT: down %.2f%% today >= limit %.2f%%. No new entries.",
                 day_loss * 100, self.cfg.daily_loss_limit_fraction * 100,
             )
+        self._persist()
         return st
 
     def can_open_new_risk(self) -> bool:
@@ -103,6 +125,7 @@ class RiskManager:
     def reset_kill_switch(self) -> None:
         """Manual, deliberate override after a kill-switch trip."""
         self.state.kill_switch_active = False
+        self._persist()
         logger.warning("Kill switch manually reset.")
 
     # ----------------------------------------------------------------- sizing

@@ -92,6 +92,21 @@ python -m agent.cli live --symbols AAPL --strategy ma_cross \
 - **Daily-loss halt.** No new exposure after `--daily-loss-limit` for the day.
 - **Position + leverage caps.** `--max-position`, `--max-leverage`.
 
+### Persist state across restarts (important for live)
+
+A live bot restarts (crashes, redeploys). Pass `--state` so the drawdown peak,
+kill-switch flag, and trade log survive restarts — otherwise a restart resets the
+peak and the kill switch silently won't fire on an in-progress drawdown.
+
+```bash
+python -m agent.cli live --symbols AAPL --strategy ma_cross \
+    --i-understand-the-risk --state ~/.webull-agent/state.json
+```
+
+The trade log is appended to the same JSON file. To clear a tripped kill switch,
+stop the bot and delete (or edit) `risk_state.kill_switch_active` in that file —
+a deliberate manual action, by design.
+
 ## Honest caveat
 
 The live adapter targets the official SDK call surface (`ApiClient` / `Account`

@@ -110,8 +110,8 @@ def cmd_walkforward(args: argparse.Namespace) -> int:
 def cmd_paper(args: argparse.Namespace) -> int:
     cfg = AgentConfig(symbols=args.symbols.split(","), initial_capital=args.capital,
                       live=False, poll_interval_seconds=args.interval,
-                      risk=_risk_from_args(args))
-    agent = TradingAgent(cfg, _build_strategy(args.strategy, args), PaperBroker(cfg))
+                      state_path=args.state, risk=_risk_from_args(args))
+    agent = TradingAgent(cfg, _build_strategy(args.strategy, args), make_broker(cfg))
     agent.run(max_cycles=args.cycles, sleep_fn=lambda s: None if args.no_sleep else __import__("time").sleep(s))
     print("Final account:", agent.broker.get_account().equity)
     return 0
@@ -141,7 +141,8 @@ def cmd_live(args: argparse.Namespace) -> int:
         return 2
     cfg = AgentConfig(symbols=args.symbols.split(","), initial_capital=args.capital,
                       live=True, dry_run=dry, paper_trading_endpoint=not args.production,
-                      poll_interval_seconds=args.interval, risk=_risk_from_args(args))
+                      poll_interval_seconds=args.interval, state_path=args.state,
+                      risk=_risk_from_args(args))
     try:
         cfg.validate()  # raises if credentials are missing
     except RuntimeError as exc:
@@ -212,6 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--symbols", default="AAPL,MSFT,SPY")
     pa.add_argument("--cycles", type=int, default=1)
     pa.add_argument("--interval", type=int, default=60)
+    pa.add_argument("--state", default=None, help="JSON state file (persists kill switch / trades)")
     pa.add_argument("--no-sleep", action="store_true")
     pa.set_defaults(func=cmd_paper)
 
@@ -239,6 +241,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="use api.webull.com (REAL MONEY) instead of UAT sandbox")
     lv.add_argument("--dry-run", action="store_true",
                     help="connect to Webull but log intended orders without sending")
+    lv.add_argument("--state", default=None, help="JSON state file (persists kill switch / trades)")
     lv.add_argument("--i-understand-the-risk", action="store_true")
     lv.set_defaults(func=cmd_live)
     return parser

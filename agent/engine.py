@@ -22,8 +22,9 @@ from . import data as market_data
 from .broker import Broker
 from .config import AgentConfig
 from .risk import RiskManager
+from .state import StateStore
 from .strategies import Strategy
-from .types import Order, OrderType, Side
+from .types import Fill, Order, OrderType, Side
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,8 @@ class TradingAgent:
         self.cfg = config
         self.strategy = strategy
         self.broker = broker
-        self.risk = risk or RiskManager(config.risk)
+        self.store = StateStore(config.state_path) if config.state_path else None
+        self.risk = risk or RiskManager(config.risk, store=self.store)
         self.history_provider = history_provider or (
             lambda s: market_data.get_history(s, range_="1y", interval="1d")
         )
@@ -105,6 +107,20 @@ class TradingAgent:
         )
         logger.info("%s %s %.0f @ ~%.2f (%s) status=%s",
                     side.value, symbol, abs(delta), price, signal.reason, fill.status.value)
+        self._log_fill(fill)
+
+    def _log_fill(self, fill: Fill) -> None:
+        if self.store is None:
+            return
+        self.store.append_trade({
+            "timestamp": fill.timestamp.isoformat(),
+            "symbol": fill.order.symbol,
+            "side": fill.order.side.value,
+            "quantity": fill.filled_quantity,
+            "price": fill.fill_price,
+            "status": fill.status.value,
+            "broker_order_id": fill.broker_order_id,
+        })
 
     def flatten_all(self) -> None:
         for symbol, pos in self.broker.get_positions().items():
@@ -113,11 +129,12 @@ class TradingAgent:
             side = Side.SELL if pos.quantity > 0 else Side.BUY
             if hasattr(self.broker, "update_price") and pos.last_price:
                 self.broker.update_price(symbol, pos.last_price)
-            self.broker.submit_order(
+            fill = self.broker.submit_order(
                 Order(symbol=symbol, side=side, quantity=abs(pos.quantity),
                       order_type=OrderType.MARKET)
             )
             logger.info("Flatten %s %.0f", symbol, abs(pos.quantity))
+            self._log_fill(fill)
 
     def run(self, max_cycles: int | None = None,
             sleep_fn: Callable[[float], None] = time.sleep) -> None:
