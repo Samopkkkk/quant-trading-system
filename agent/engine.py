@@ -26,11 +26,25 @@ from .marketclock import ET, is_market_open, next_close_reason
 from .risk import RiskManager
 from .state import StateStore
 from .strategies import Strategy
-from .types import Fill, Order, OrderType, Side
+from .types import Fill, Order, OrderStatus, OrderType, Side
 
 logger = logging.getLogger(__name__)
 
 HistoryProvider = Callable[[str], pd.DataFrame]
+
+_TERMINAL_STATUSES = {"FILLED", "CANCELLED", "CANCELED", "REJECTED", "FAILED", "EXPIRED"}
+
+
+def _order_is_terminal(payload: object) -> bool:
+    """Best-effort: does a broker order-status payload indicate a final state?"""
+    if isinstance(payload, dict):
+        for key in ("status", "order_status", "orderStatus"):
+            val = payload.get(key)
+            if isinstance(val, str):
+                return val.upper().replace(" ", "_") in _TERMINAL_STATUSES
+        if isinstance(payload.get("data"), dict):
+            return _order_is_terminal(payload["data"])
+    return False  # unknown shape -> treat as still pending (a TTL prevents deadlock)
 
 
 class TradingAgent:
@@ -58,6 +72,11 @@ class TradingAgent:
         self.vol_window = vol_window
         self.periods_per_year = periods_per_year
         self._initialized = False
+        # Symbols with an order submitted but not yet confirmed filled. Prevents
+        # stacking a duplicate order while the first is still working.
+        self._inflight: dict[str, str] = {}
+        self._inflight_age: dict[str, int] = {}
+        self.max_inflight_cycles = 6
 
     # ------------------------------------------------------------------ cycle
     def _ensure_initialized(self) -> None:
@@ -70,6 +89,7 @@ class TradingAgent:
             logger.info("Market closed (%s); skipping cycle.", next_close_reason(self.clock()))
             return
         self._ensure_initialized()
+        self._reconcile_inflight()
         account = self.broker.get_account()
         state = self.risk.update_equity(account.equity)
         logger.info("Equity=$%.2f | kill_switch=%s | new_entries_halted=%s",
@@ -108,13 +128,46 @@ class TradingAgent:
         delta = target - cur_qty
         if abs(delta) < 1:
             return
+        if symbol in self._inflight:
+            logger.info("%s has an in-flight order (%s); skipping new order this cycle.",
+                        symbol, self._inflight[symbol])
+            return
         side = Side.BUY if delta > 0 else Side.SELL
         fill = self.broker.submit_order(
             Order(symbol=symbol, side=side, quantity=abs(delta), order_type=OrderType.MARKET)
         )
         logger.info("%s %s %.0f @ ~%.2f (%s) status=%s",
                     side.value, symbol, abs(delta), price, signal.reason, fill.status.value)
+        self._track_inflight(symbol, fill)
         self._log_fill(fill)
+
+    def _track_inflight(self, symbol: str, fill: Fill) -> None:
+        if fill.status in (OrderStatus.PENDING, OrderStatus.PARTIAL) and fill.broker_order_id:
+            self._inflight[symbol] = fill.broker_order_id
+            self._inflight_age[symbol] = 0
+        else:                                   # FILLED / REJECTED / CANCELLED -> not working
+            self._inflight.pop(symbol, None)
+            self._inflight_age.pop(symbol, None)
+
+    def _reconcile_inflight(self) -> None:
+        """Clear symbols whose working order has reached a terminal state."""
+        if not hasattr(self.broker, "get_order_status"):
+            self._inflight.clear()              # broker fills synchronously (e.g. paper)
+            self._inflight_age.clear()
+            return
+        for symbol, coid in list(self._inflight.items()):
+            terminal = False
+            try:
+                terminal = _order_is_terminal(self.broker.get_order_status(coid))
+            except Exception:
+                logger.exception("Reconcile failed for %s (%s)", symbol, coid)
+            self._inflight_age[symbol] = self._inflight_age.get(symbol, 0) + 1
+            if terminal or self._inflight_age[symbol] > self.max_inflight_cycles:
+                if not terminal:
+                    logger.warning("Order %s for %s unresolved after %d cycles; clearing.",
+                                   coid, symbol, self.max_inflight_cycles)
+                self._inflight.pop(symbol, None)
+                self._inflight_age.pop(symbol, None)
 
     def _log_fill(self, fill: Fill) -> None:
         if self.store is None:
