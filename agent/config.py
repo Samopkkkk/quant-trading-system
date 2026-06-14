@@ -94,6 +94,9 @@ class AgentConfig:
     # Loop cadence for live/paper run, in seconds.
     poll_interval_seconds: int = 60
 
+    # If True, the live/paper loop only trades during US-equity regular hours.
+    enforce_market_hours: bool = False
+
     # Path to a JSON state file (persists kill switch / peak equity / trade log
     # across restarts). None disables persistence (fine for backtests).
     state_path: str | None = None

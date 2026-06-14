@@ -24,6 +24,7 @@ from .broker import (
     Broker, PaperBroker, WebullBroker, DryRunBroker, make_broker,
     parse_instrument_ids, preflight,
 )
+from .marketclock import is_market_open, is_trading_day
 from .risk import RiskManager, kelly_fraction
 from .state import StateStore
 from .strategies import (
@@ -40,6 +41,7 @@ __all__ = [
     "Broker", "PaperBroker", "WebullBroker", "DryRunBroker", "make_broker",
     "parse_instrument_ids", "preflight",
     "RiskManager", "kelly_fraction", "StateStore",
+    "is_market_open", "is_trading_day",
     "STRATEGIES", "Strategy", "MovingAverageCross", "Momentum", "RsiMeanReversion",
     "walk_forward", "param_grid", "WalkForwardResult",
     "Order", "Fill", "Position", "Signal", "Side", "OrderType",

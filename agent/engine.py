@@ -11,6 +11,7 @@ Safety posture:
 """
 from __future__ import annotations
 
+from datetime import datetime
 import logging
 import time
 from typing import Callable
@@ -21,6 +22,7 @@ import pandas as pd
 from . import data as market_data
 from .broker import Broker
 from .config import AgentConfig
+from .marketclock import ET, is_market_open, next_close_reason
 from .risk import RiskManager
 from .state import StateStore
 from .strategies import Strategy
@@ -39,6 +41,7 @@ class TradingAgent:
         broker: Broker,
         risk: RiskManager | None = None,
         history_provider: HistoryProvider | None = None,
+        clock: Callable[[], datetime] | None = None,
         vol_window: int = 20,
         periods_per_year: int = 252,
     ):
@@ -51,6 +54,7 @@ class TradingAgent:
         self.history_provider = history_provider or (
             lambda s: market_data.get_history(s, range_="1y", interval="1d")
         )
+        self.clock = clock or (lambda: datetime.now(ET))
         self.vol_window = vol_window
         self.periods_per_year = periods_per_year
         self._initialized = False
@@ -62,6 +66,9 @@ class TradingAgent:
             self._initialized = True
 
     def run_once(self) -> None:
+        if self.cfg.enforce_market_hours and not is_market_open(self.clock()):
+            logger.info("Market closed (%s); skipping cycle.", next_close_reason(self.clock()))
+            return
         self._ensure_initialized()
         account = self.broker.get_account()
         state = self.risk.update_equity(account.equity)

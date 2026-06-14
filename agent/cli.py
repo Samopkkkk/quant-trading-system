@@ -110,7 +110,8 @@ def cmd_walkforward(args: argparse.Namespace) -> int:
 def cmd_paper(args: argparse.Namespace) -> int:
     cfg = AgentConfig(symbols=args.symbols.split(","), initial_capital=args.capital,
                       live=False, poll_interval_seconds=args.interval,
-                      state_path=args.state, risk=_risk_from_args(args))
+                      state_path=args.state, enforce_market_hours=args.rth,
+                      risk=_risk_from_args(args))
     agent = TradingAgent(cfg, _build_strategy(args.strategy, args), make_broker(cfg))
     agent.run(max_cycles=args.cycles, sleep_fn=lambda s: None if args.no_sleep else __import__("time").sleep(s))
     print("Final account:", agent.broker.get_account().equity)
@@ -142,6 +143,7 @@ def cmd_live(args: argparse.Namespace) -> int:
     cfg = AgentConfig(symbols=args.symbols.split(","), initial_capital=args.capital,
                       live=True, dry_run=dry, paper_trading_endpoint=not args.production,
                       poll_interval_seconds=args.interval, state_path=args.state,
+                      enforce_market_hours=not args.ignore_market_hours,
                       risk=_risk_from_args(args))
     try:
         cfg.validate()  # raises if credentials are missing
@@ -214,6 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--cycles", type=int, default=1)
     pa.add_argument("--interval", type=int, default=60)
     pa.add_argument("--state", default=None, help="JSON state file (persists kill switch / trades)")
+    pa.add_argument("--rth", action="store_true", help="only trade during US regular hours")
     pa.add_argument("--no-sleep", action="store_true")
     pa.set_defaults(func=cmd_paper)
 
@@ -242,6 +245,8 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("--dry-run", action="store_true",
                     help="connect to Webull but log intended orders without sending")
     lv.add_argument("--state", default=None, help="JSON state file (persists kill switch / trades)")
+    lv.add_argument("--ignore-market-hours", action="store_true",
+                    help="trade even when the US market is closed (off by default)")
     lv.add_argument("--i-understand-the-risk", action="store_true")
     lv.set_defaults(func=cmd_live)
     return parser
