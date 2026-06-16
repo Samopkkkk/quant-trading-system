@@ -97,6 +97,14 @@ class AgentConfig:
     # If True, the live/paper loop only trades during US-equity regular hours.
     enforce_market_hours: bool = False
 
+    # Auto symbol selection (新标的选择). If `universe` is set, the agent screens
+    # that candidate pool and trades the top `screen_top_n`, re-screening every
+    # `rescreen_every` cycles; positions in dropped names are flattened. If None,
+    # the agent trades the fixed `symbols` list.
+    universe: list[str] | None = None
+    screen_top_n: int = 5
+    rescreen_every: int = 1
+
     # Path to a JSON state file (persists kill switch / peak equity / trade log
     # across restarts). None disables persistence (fine for backtests).
     state_path: str | None = None

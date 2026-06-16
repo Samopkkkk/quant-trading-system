@@ -33,6 +33,20 @@ def _build_strategy(name: str, args: argparse.Namespace):
     return cls()
 
 
+def _parse_universe(args: argparse.Namespace) -> list[str] | None:
+    val = getattr(args, "universe", None)
+    if not val:
+        return None
+    return [s.strip().upper() for s in val.split(",") if s.strip()]
+
+
+def _add_universe_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--universe", default=None,
+                   help="candidate pool to auto-screen; trades the top-N selected")
+    p.add_argument("--screen-top-n", type=int, default=5)
+    p.add_argument("--rescreen-every", type=int, default=1, help="cycles between re-screens")
+
+
 def _risk_from_args(args: argparse.Namespace) -> RiskConfig:
     return RiskConfig(
         max_position_fraction=args.max_position,
@@ -134,9 +148,12 @@ def cmd_walkforward(args: argparse.Namespace) -> int:
 
 
 def cmd_paper(args: argparse.Namespace) -> int:
-    cfg = AgentConfig(symbols=args.symbols.split(","), initial_capital=args.capital,
-                      live=False, poll_interval_seconds=args.interval,
-                      state_path=args.state, enforce_market_hours=args.rth,
+    universe = _parse_universe(args)
+    cfg = AgentConfig(symbols=universe or args.symbols.split(","),
+                      initial_capital=args.capital, live=False,
+                      poll_interval_seconds=args.interval, state_path=args.state,
+                      enforce_market_hours=args.rth, universe=universe,
+                      screen_top_n=args.screen_top_n, rescreen_every=args.rescreen_every,
                       risk=_risk_from_args(args))
     agent = TradingAgent(cfg, _build_strategy(args.strategy, args), make_broker(cfg))
     agent.run(max_cycles=args.cycles, sleep_fn=lambda s: None if args.no_sleep else __import__("time").sleep(s))
@@ -166,10 +183,13 @@ def cmd_live(args: argparse.Namespace) -> int:
               "deposit if margin/leverage is used. Read docs/RETURNS_AND_RISK.md.\n"
               "Tip: start with --dry-run (connects, sends no orders).")
         return 2
-    cfg = AgentConfig(symbols=args.symbols.split(","), initial_capital=args.capital,
-                      live=True, dry_run=dry, paper_trading_endpoint=not args.production,
+    universe = _parse_universe(args)
+    cfg = AgentConfig(symbols=universe or args.symbols.split(","),
+                      initial_capital=args.capital, live=True, dry_run=dry,
+                      paper_trading_endpoint=not args.production,
                       poll_interval_seconds=args.interval, state_path=args.state,
-                      enforce_market_hours=not args.ignore_market_hours,
+                      enforce_market_hours=not args.ignore_market_hours, universe=universe,
+                      screen_top_n=args.screen_top_n, rescreen_every=args.rescreen_every,
                       risk=_risk_from_args(args))
     try:
         cfg.validate()  # raises if credentials are missing
@@ -244,6 +264,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--state", default=None, help="JSON state file (persists kill switch / trades)")
     pa.add_argument("--rth", action="store_true", help="only trade during US regular hours")
     pa.add_argument("--no-sleep", action="store_true")
+    _add_universe_args(pa)
     pa.set_defaults(func=cmd_paper)
 
     po = sub.add_parser("portfolio", help="multi-symbol portfolio backtest")
@@ -284,6 +305,7 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("--ignore-market-hours", action="store_true",
                     help="trade even when the US market is closed (off by default)")
     lv.add_argument("--i-understand-the-risk", action="store_true")
+    _add_universe_args(lv)
     lv.set_defaults(func=cmd_live)
     return parser
 

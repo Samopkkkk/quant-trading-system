@@ -55,6 +55,10 @@ python -m agent.cli screen --symbols AAPL,MSFT,NVDA,TSLA,SPY,QQQ
 # Money-flow-gated strategy: only go long when capital is actually flowing in
 python -m agent.cli backtest --symbol AAPL --strategy money_flow --range 2y
 
+# Auto-select the traded universe from a candidate pool (re-screens each cycle,
+# exits names that drop out). Works in paper and live.
+python -m agent.cli paper --universe AAPL,MSFT,NVDA,TSLA,SPY,QQQ --screen-top-n 3 --strategy money_flow
+
 # Check live prerequisites before connecting to Webull
 python -m agent.cli preflight
 

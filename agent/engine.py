@@ -24,6 +24,7 @@ from .broker import Broker
 from .config import AgentConfig
 from .marketclock import ET, is_market_open, next_close_reason
 from .risk import RiskManager
+from .screener import select_symbols
 from .state import StateStore
 from .strategies import Strategy
 from .types import Fill, Order, OrderStatus, OrderType, Side
@@ -77,6 +78,10 @@ class TradingAgent:
         self._inflight: dict[str, str] = {}
         self._inflight_age: dict[str, int] = {}
         self.max_inflight_cycles = 6
+        # The symbols currently traded. With a universe configured this is the
+        # screened selection; otherwise it is the fixed config list.
+        self.active_symbols: list[str] = list(config.symbols)
+        self._cycle = 0
 
     # ------------------------------------------------------------------ cycle
     def _ensure_initialized(self) -> None:
@@ -89,22 +94,47 @@ class TradingAgent:
             logger.info("Market closed (%s); skipping cycle.", next_close_reason(self.clock()))
             return
         self._ensure_initialized()
+        self._maybe_rescreen()
         self._reconcile_inflight()
         account = self.broker.get_account()
         state = self.risk.update_equity(account.equity)
-        logger.info("Equity=$%.2f | kill_switch=%s | new_entries_halted=%s",
-                    account.equity, state.kill_switch_active, state.new_entries_halted)
+        logger.info("Equity=$%.2f | symbols=%s | kill_switch=%s | new_entries_halted=%s",
+                    account.equity, self.active_symbols, state.kill_switch_active,
+                    state.new_entries_halted)
 
         if state.kill_switch_active:
             logger.error("Kill switch active — flattening all positions.")
             self.flatten_all()
+            self._cycle += 1
             return
 
-        for symbol in self.cfg.symbols:
+        for symbol in self.active_symbols:
             try:
                 self._handle_symbol(symbol, account.equity)
             except Exception:
                 logger.exception("Error handling %s", symbol)
+        self._cycle += 1
+
+    def _maybe_rescreen(self) -> None:
+        """Re-select the trading universe from the candidate pool (新标的选择)."""
+        if not self.cfg.universe:
+            return
+        if self._cycle % self.cfg.rescreen_every != 0:
+            return
+        histories: dict = {}
+        for sym in self.cfg.universe:
+            try:
+                histories[sym] = self.history_provider(sym)
+            except Exception:
+                logger.exception("Could not fetch history for %s during screen", sym)
+        selected = select_symbols(histories, top_n=self.cfg.screen_top_n)
+        if not selected or selected == self.active_symbols:
+            return
+        dropped = [s for s in self.active_symbols if s not in selected]
+        for sym in dropped:                       # exit names that fell out of the book
+            self._flatten_symbol(sym)
+        logger.info("Universe re-screened: %s -> %s", self.active_symbols, selected)
+        self.active_symbols = selected
 
     def _handle_symbol(self, symbol: str, equity: float) -> None:
         history = self.history_provider(symbol)
@@ -182,19 +212,23 @@ class TradingAgent:
             "broker_order_id": fill.broker_order_id,
         })
 
+    def _flatten_symbol(self, symbol: str) -> None:
+        pos = self.broker.get_positions().get(symbol)
+        if pos is None or pos.quantity == 0:
+            return
+        side = Side.SELL if pos.quantity > 0 else Side.BUY
+        if hasattr(self.broker, "update_price") and pos.last_price:
+            self.broker.update_price(symbol, pos.last_price)
+        fill = self.broker.submit_order(
+            Order(symbol=symbol, side=side, quantity=abs(pos.quantity),
+                  order_type=OrderType.MARKET)
+        )
+        logger.info("Flatten %s %.0f", symbol, abs(pos.quantity))
+        self._log_fill(fill)
+
     def flatten_all(self) -> None:
-        for symbol, pos in self.broker.get_positions().items():
-            if pos.quantity == 0:
-                continue
-            side = Side.SELL if pos.quantity > 0 else Side.BUY
-            if hasattr(self.broker, "update_price") and pos.last_price:
-                self.broker.update_price(symbol, pos.last_price)
-            fill = self.broker.submit_order(
-                Order(symbol=symbol, side=side, quantity=abs(pos.quantity),
-                      order_type=OrderType.MARKET)
-            )
-            logger.info("Flatten %s %.0f", symbol, abs(pos.quantity))
-            self._log_fill(fill)
+        for symbol in list(self.broker.get_positions()):
+            self._flatten_symbol(symbol)
 
     def run(self, max_cycles: int | None = None,
             sleep_fn: Callable[[float], None] = time.sleep) -> None:
