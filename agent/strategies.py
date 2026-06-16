@@ -14,6 +14,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
 
+from .indicators import chaikin_money_flow, money_flow_index
 from .types import Signal
 
 
@@ -133,9 +134,78 @@ class RsiMeanReversion(Strategy):
         return Signal(symbol, target=0.0, reason=f"rsi={rsi:.1f}")
 
 
+class MoneyFlowStrategy(Strategy):
+    """Trend + money-flow (资金流向): a trend alone is not enough — capital must
+    actually be flowing in to go long (and out to go short).
+
+    Long  : fast MA > slow MA AND CMF > +threshold (net inflow).
+    Short : fast MA < slow MA AND CMF < -threshold (net outflow), if allow_short.
+    Otherwise flat — e.g. an uptrend on fading money flow is NOT bought.
+    """
+
+    def __init__(self, fast: int = 20, slow: int = 50, cmf_period: int = 20,
+                 cmf_threshold: float = 0.05, allow_short: bool = False,
+                 atr_stop_mult: float = 3.0):
+        if fast >= slow:
+            raise ValueError("fast period must be < slow period")
+        self.fast, self.slow = fast, slow
+        self.cmf_period = cmf_period
+        self.cmf_threshold = cmf_threshold
+        self.allow_short = allow_short
+        self.atr_stop_mult = atr_stop_mult
+        self.warmup = max(slow, cmf_period) + 1
+
+    def evaluate(self, symbol: str, history: pd.DataFrame) -> Signal:
+        if len(history) < self.warmup:
+            return self._flat(symbol)
+        close = history["close"]
+        fast_ma, slow_ma = close.tail(self.fast).mean(), close.tail(self.slow).mean()
+        cmf = chaikin_money_flow(history, self.cmf_period)
+        last, a = float(close.iloc[-1]), atr(history, self.fast)
+        if cmf != cmf:                                       # NaN guard
+            return Signal(symbol, 0.0, reason="cmf unavailable")
+
+        if fast_ma > slow_ma and cmf > self.cmf_threshold:
+            stop = last - self.atr_stop_mult * a if a == a else None
+            return Signal(symbol, 1.0, stop_price=stop, reason=f"uptrend+inflow cmf={cmf:.2f}")
+        if self.allow_short and fast_ma < slow_ma and cmf < -self.cmf_threshold:
+            stop = last + self.atr_stop_mult * a if a == a else None
+            return Signal(symbol, -1.0, stop_price=stop, reason=f"downtrend+outflow cmf={cmf:.2f}")
+        return Signal(symbol, 0.0, reason=f"unconfirmed cmf={cmf:.2f}")
+
+
+class MoneyFlowConfirmed(Strategy):
+    """Wrap ANY strategy and veto its entries unless money flow confirms them.
+
+    A reusable way to "add 资金流向 to the up/down judgment" of an existing
+    strategy: a long is only allowed if CMF >= min_cmf; a short only if
+    CMF <= -min_cmf. Exits (flat) always pass through.
+    """
+
+    def __init__(self, base: Strategy, cmf_period: int = 20, min_cmf: float = 0.0):
+        self.base = base
+        self.cmf_period = cmf_period
+        self.min_cmf = min_cmf
+        self.warmup = max(getattr(base, "warmup", 1), cmf_period)
+
+    def evaluate(self, symbol: str, history: pd.DataFrame) -> Signal:
+        sig = self.base.evaluate(symbol, history)
+        if sig.target == 0.0:
+            return sig
+        cmf = chaikin_money_flow(history, self.cmf_period)
+        if cmf != cmf:                                       # NaN -> be conservative
+            return Signal(symbol, 0.0, reason="cmf unavailable")
+        if sig.target > 0 and cmf < self.min_cmf:
+            return Signal(symbol, 0.0, reason=f"long vetoed, cmf={cmf:.2f}")
+        if sig.target < 0 and cmf > -self.min_cmf:
+            return Signal(symbol, 0.0, reason=f"short vetoed, cmf={cmf:.2f}")
+        return sig
+
+
 # Registry for the CLI.
 STRATEGIES: dict[str, type[Strategy]] = {
     "ma_cross": MovingAverageCross,
     "momentum": Momentum,
     "rsi": RsiMeanReversion,
+    "money_flow": MoneyFlowStrategy,
 }

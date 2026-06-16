@@ -49,6 +49,12 @@ python -m agent.cli walkforward --symbol AAPL --range 5y --strategy ma_cross
 # Multi-symbol portfolio backtest (shared capital, book-level leverage cap)
 python -m agent.cli portfolio --symbols A,B,C --synthetic --strategy momentum
 
+# Select symbols by liquidity + momentum + money flow (资金流向)
+python -m agent.cli screen --symbols AAPL,MSFT,NVDA,TSLA,SPY,QQQ
+
+# Money-flow-gated strategy: only go long when capital is actually flowing in
+python -m agent.cli backtest --symbol AAPL --strategy money_flow --range 2y
+
 # Check live prerequisites before connecting to Webull
 python -m agent.cli preflight
 

@@ -17,6 +17,7 @@ from .backtest import Backtester, PortfolioBacktester
 from .broker import PaperBroker, make_broker
 from .config import AgentConfig, RiskConfig
 from .engine import TradingAgent
+from .screener import screen_universe
 from .strategies import STRATEGIES
 from .validation import param_grid, walk_forward
 
@@ -76,6 +77,31 @@ def cmd_portfolio(args: argparse.Namespace) -> int:
     print(f"Portfolio of {len(symbols)} symbols: {symbols}")
     print(report.summary())
     print("\nReminder: this is one historical path, not a prediction or guarantee.")
+    return 0
+
+
+def cmd_screen(args: argparse.Namespace) -> int:
+    syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    histories: dict = {}
+    if args.synthetic:
+        for i, s in enumerate(syms):
+            histories[s] = market_data.synthetic_ohlcv(days=args.days, seed=i + 1,
+                                                        annual_drift=0.05 * i)
+    else:
+        for s in syms:
+            try:
+                histories[s] = market_data.get_history(s, range_=args.range, interval="1d")
+            except Exception as exc:
+                print(f"  skip {s}: {exc}")
+    results = screen_universe(histories, momentum_lookback=args.lookback,
+                              min_dollar_volume=args.min_dollar_volume)
+    print(f"Screened {len(histories)} symbol(s); top {args.top_n} by momentum + money flow:")
+    print(f"  {'symbol':8s}{'score':>9s}{'momentum':>11s}{'cmf':>8s}{'$vol(M)':>11s}")
+    for r in results[:args.top_n]:
+        print(f"  {r.symbol:8s}{r.score:9.3f}{r.momentum:11.2%}{r.cmf:8.2f}"
+              f"{r.dollar_volume / 1e6:11.1f}")
+    if not results:
+        print("  (none passed the liquidity/history filters)")
     return 0
 
 
@@ -228,6 +254,16 @@ def build_parser() -> argparse.ArgumentParser:
     po.add_argument("--days", type=int, default=504)
     po.add_argument("--seed", type=int, default=42)
     po.set_defaults(func=cmd_portfolio)
+
+    sc = sub.add_parser("screen", help="select symbols by liquidity + momentum + money flow")
+    sc.add_argument("--symbols", default="AAPL,MSFT,NVDA,TSLA,SPY,QQQ")
+    sc.add_argument("--range", default="1y")
+    sc.add_argument("--synthetic", action="store_true")
+    sc.add_argument("--days", type=int, default=252)
+    sc.add_argument("--top-n", type=int, default=5)
+    sc.add_argument("--lookback", type=int, default=90)
+    sc.add_argument("--min-dollar-volume", type=float, default=1e7)
+    sc.set_defaults(func=cmd_screen)
 
     pf = sub.add_parser("preflight", help="check live-trading prerequisites")
     pf.add_argument("--symbols", default="AAPL")
