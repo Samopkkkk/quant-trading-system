@@ -45,6 +45,8 @@ def _add_universe_args(p: argparse.ArgumentParser) -> None:
                    help="candidate pool to auto-screen; trades the top-N selected")
     p.add_argument("--screen-top-n", type=int, default=5)
     p.add_argument("--rescreen-every", type=int, default=1, help="cycles between re-screens")
+    p.add_argument("--min-cmf", type=float, default=None,
+                   help="only select symbols with money flowing in (CMF >= this)")
 
 
 def _risk_from_args(args: argparse.Namespace) -> RiskConfig:
@@ -108,7 +110,8 @@ def cmd_screen(args: argparse.Namespace) -> int:
             except Exception as exc:
                 print(f"  skip {s}: {exc}")
     results = screen_universe(histories, momentum_lookback=args.lookback,
-                              min_dollar_volume=args.min_dollar_volume)
+                              min_dollar_volume=args.min_dollar_volume,
+                              min_cmf=args.min_cmf)
     print(f"Screened {len(histories)} symbol(s); top {args.top_n} by momentum + money flow:")
     print(f"  {'symbol':8s}{'score':>9s}{'momentum':>11s}{'cmf':>8s}{'$vol(M)':>11s}")
     for r in results[:args.top_n]:
@@ -154,7 +157,7 @@ def cmd_paper(args: argparse.Namespace) -> int:
                       poll_interval_seconds=args.interval, state_path=args.state,
                       enforce_market_hours=args.rth, universe=universe,
                       screen_top_n=args.screen_top_n, rescreen_every=args.rescreen_every,
-                      risk=_risk_from_args(args))
+                      screen_min_cmf=args.min_cmf, risk=_risk_from_args(args))
     agent = TradingAgent(cfg, _build_strategy(args.strategy, args), make_broker(cfg))
     agent.run(max_cycles=args.cycles, sleep_fn=lambda s: None if args.no_sleep else __import__("time").sleep(s))
     print("Final account:", agent.broker.get_account().equity)
@@ -190,7 +193,7 @@ def cmd_live(args: argparse.Namespace) -> int:
                       poll_interval_seconds=args.interval, state_path=args.state,
                       enforce_market_hours=not args.ignore_market_hours, universe=universe,
                       screen_top_n=args.screen_top_n, rescreen_every=args.rescreen_every,
-                      risk=_risk_from_args(args))
+                      screen_min_cmf=args.min_cmf, risk=_risk_from_args(args))
     try:
         cfg.validate()  # raises if credentials are missing
     except RuntimeError as exc:
@@ -284,6 +287,8 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--top-n", type=int, default=5)
     sc.add_argument("--lookback", type=int, default=90)
     sc.add_argument("--min-dollar-volume", type=float, default=1e7)
+    sc.add_argument("--min-cmf", type=float, default=None,
+                    help="only select symbols with money flowing in (CMF >= this)")
     sc.set_defaults(func=cmd_screen)
 
     pf = sub.add_parser("preflight", help="check live-trading prerequisites")

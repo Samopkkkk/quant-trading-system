@@ -104,6 +104,7 @@ class AgentConfig:
     universe: list[str] | None = None
     screen_top_n: int = 5
     rescreen_every: int = 1
+    screen_min_cmf: float | None = None        # require net inflow (CMF >=) to select
 
     # Path to a JSON state file (persists kill switch / peak equity / trade log
     # across restarts). None disables persistence (fine for backtests).

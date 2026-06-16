@@ -127,7 +127,8 @@ class TradingAgent:
                 histories[sym] = self.history_provider(sym)
             except Exception:
                 logger.exception("Could not fetch history for %s during screen", sym)
-        selected = select_symbols(histories, top_n=self.cfg.screen_top_n)
+        selected = select_symbols(histories, top_n=self.cfg.screen_top_n,
+                                  min_cmf=self.cfg.screen_min_cmf)
         if not selected or selected == self.active_symbols:
             return
         dropped = [s for s in self.active_symbols if s not in selected]

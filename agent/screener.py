@@ -38,8 +38,13 @@ def screen_universe(
     cmf_period: int = 20,
     min_dollar_volume: float = 1e7,
     min_history: int = 120,
+    min_cmf: float | None = None,
 ) -> list[ScreenResult]:
-    """Filter for liquidity/history, then rank by momentum + money flow (desc)."""
+    """Filter for liquidity/history, then rank by momentum + money flow (desc).
+
+    If `min_cmf` is set, also require net capital inflow (CMF >= min_cmf) — i.e.
+    only select symbols money is actually flowing INTO (资金流向 applied to 选股).
+    """
     results: list[ScreenResult] = []
     for symbol, df in histories.items():
         if df is None or len(df) < min_history:
@@ -50,6 +55,8 @@ def screen_universe(
         mom = _momentum(df, momentum_lookback)
         cmf = chaikin_money_flow(df, cmf_period)
         cmf = 0.0 if cmf != cmf else cmf                      # NaN -> neutral
+        if min_cmf is not None and cmf < min_cmf:
+            continue                                          # money flowing out -> skip
         results.append(ScreenResult(symbol, mom + cmf, adv, mom, cmf))
     results.sort(key=lambda r: r.score, reverse=True)
     return results

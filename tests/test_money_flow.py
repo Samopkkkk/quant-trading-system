@@ -82,3 +82,14 @@ def test_screener_filters_and_ranks():
     assert "ILLIQUID" not in syms and "SHORT" not in syms  # filtered out
     assert syms[0] == "STRONG"                             # best score first
     assert select_symbols({"STRONG": strong, "WEAK": weak}, top_n=1) == ["STRONG"]
+
+
+def test_screener_min_cmf_requires_inflow():
+    up = list(np.linspace(100, 180, 200))
+    inflow = _bars(up, highs=[c * 1.001 for c in up], lows=[c * 0.97 for c in up])   # CMF > 0
+    outflow = _bars(up, highs=[c * 1.03 for c in up], lows=[c * 0.999 for c in up])  # CMF < 0
+    hist = {"IN": inflow, "OUT": outflow}
+    # Without the filter both qualify; with min_cmf=0 only the inflow name survives.
+    assert set(r.symbol for r in screen_universe(hist, min_dollar_volume=1e6)) == {"IN", "OUT"}
+    selected = screen_universe(hist, min_dollar_volume=1e6, min_cmf=0.0)
+    assert [r.symbol for r in selected] == ["IN"]
