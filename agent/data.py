@@ -66,6 +66,40 @@ def load_csv(path: str) -> pd.DataFrame:
     return df[_OHLCV].sort_index()
 
 
+def _normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    """Map an arbitrary CSV to OHLCV. Tolerates prefixed names like 'AAPL.Open'."""
+    date_col = next((c for c in df.columns
+                     if c.lower() in ("date", "datetime", "time", "timestamp")),
+                    df.columns[0])
+    out: dict[str, pd.Series] = {}
+    for field in _OHLCV:
+        match = next((c for c in df.columns if c.lower() == field
+                      or c.lower().endswith(("." + field, "_" + field, " " + field))), None)
+        if match is not None:
+            out[field] = pd.to_numeric(df[match], errors="coerce")
+    if not {"open", "high", "low", "close"}.issubset(out):
+        raise ValueError(f"CSV missing OHLC columns; saw {list(df.columns)[:10]}")
+    out.setdefault("volume", pd.Series(0.0, index=df.index))
+    res = pd.DataFrame(out)
+    res.index = pd.to_datetime(df[date_col])
+    res.index.name = "date"
+    return res.dropna(subset=["close"]).sort_index()
+
+
+def fetch_csv_url(url: str, timeout: float = 20.0) -> pd.DataFrame:
+    """Fetch and normalize an OHLCV CSV from a URL.
+
+    Useful in restricted environments where dedicated market-data APIs are not on
+    the egress allowlist but a CSV host (e.g. raw.githubusercontent.com) is.
+    """
+    import requests
+
+    resp = requests.get(url, headers={"User-Agent": "quant-agent/1.0"}, timeout=timeout)
+    resp.raise_for_status()
+    import io
+    return _normalize_ohlcv(pd.read_csv(io.StringIO(resp.text)))
+
+
 def fetch_yahoo(
     symbol: str,
     range_: str = "1y",
